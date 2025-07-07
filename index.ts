@@ -8,6 +8,39 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { runAppleScript } from "run-applescript";
 import { run } from "@jxa/run";
+import { spawn, spawnSync } from "child_process";
+
+/**
+ * Escape a string for AppleScript literals
+ */
+const encodeForAppleScript = (text: string): string =>
+  text.replace(/\\/g, "\\\\").replace(/"/g, '\\"'); // back-slash + quote
+
+/**
+ * Portable clipboard setter. On macOS use pbcopy (no escaping needed);
+ * elsewhere fall back to osascript with escaping.
+ */
+function setClipboard(text: string) {
+  if (process.platform === "darwin") {
+    const proc = spawn("pbcopy", [], {
+      env: { ...process.env, LC_CTYPE: "UTF-8" },
+    });
+    proc.stdin.write(text);
+    proc.stdin.end();
+  } else {
+    spawnSync("osascript", [
+      "-e",
+      `set the clipboard to "${encodeForAppleScript(text)}"`,
+    ]);
+  }
+}
+
+function getClipboard(): string {
+  if (process.platform === "darwin") {
+    return spawnSync("pbpaste", { encoding: "utf8" }).stdout;
+  }
+  return runAppleScript("the clipboard");
+}
 
 // Define the ChatGPT tool
 const CHATGPT_TOOL: Tool = {
@@ -87,22 +120,12 @@ async function askChatGPT(
 	conversationId?: string,
 ): Promise<string> {
 	await checkChatGPTAccess();
-	try {
-		// Function to properly encode text for AppleScript, including handling of Chinese characters
-		const encodeForAppleScript = (text: string): string => {
-			// Only escape double quotes, leave other characters as is
-			return text.replace(/"/g, '\\"');
-		};
+        try {
+                // Save original clipboard content
+                const originalClipboard = getClipboard();
 
-		const encodedPrompt = encodeForAppleScript(prompt);
-		
-		// Save original clipboard content
-		const saveClipboardScript = `
-			set savedClipboard to the clipboard
-			return savedClipboard
-		`;
-		const originalClipboard = await runAppleScript(saveClipboardScript);
-		const encodedOriginalClipboard = encodeForAppleScript(originalClipboard);
+                // Set clipboard to the prompt text using helper
+                setClipboard(prompt);
 		
 		const script = `
       tell application "ChatGPT"
@@ -125,8 +148,8 @@ async function askChatGPT(
             keystroke (ASCII character 8) -- Delete key
             delay 0.5
             
-            -- Set the clipboard to the prompt text
-            set the clipboard to "${encodedPrompt}"
+            -- Set the clipboard via Node helper (safer for special chars)
+            -- clipboard already set by setClipboard() before running script
             
             -- Paste the prompt and send it
             keystroke "v" using {command down}
@@ -219,10 +242,10 @@ async function askChatGPT(
         end tell
       end tell
     `;
-		const result = await runAppleScript(script);
-		
-		// Restore original clipboard content
-		await runAppleScript(`set the clipboard to "${encodedOriginalClipboard}"`);
+                const result = await runAppleScript(script);
+
+                // Restore original clipboard content
+                setClipboard(originalClipboard);
 		
 		// Post-process the result to clean up any UI text that might have been captured
 		let cleanedResult = result
