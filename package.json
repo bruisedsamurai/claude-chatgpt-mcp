@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "dev": "bun run index.ts",
-    "build": "tsc",
+    "build": "tsc --outDir dist",
     "prepare": "npm run build",
     "start": "node dist/index.js"
   },
