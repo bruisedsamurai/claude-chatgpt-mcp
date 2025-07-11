@@ -126,7 +126,7 @@ async function ensureChatGPTRunning(): Promise<void> {
   }
 }
 
-async function askChatGPT(prompt: string, conversationId: string?) {
+async function askChatGPT(prompt: string, conversationId?: string) {
   await ensureChatGPTRunning();
 
   // 1. Save your existing clipboard so we can restore it later
