@@ -129,55 +129,60 @@ async function ensureChatGPTRunning(): Promise<void> {
 async function askChatGPT(prompt: string, conversationId?: string) {
   await ensureChatGPTRunning();
 
-  // 1. Save your existing clipboard so we can restore it later
   const originalClipboard = getClipboard();
-  // 2. Put our prompt on the clipboard so we can “paste” it into the ChatGPT window
   setClipboard(prompt);
 
-  // 3. Send keystrokes to paste the prompt, send it, wait for generation, then copy the response
   await runAppleScript(`
     tell application "ChatGPT" to activate
-    delay 1
+    delay 0.5
     tell application "System Events"
       tell process "ChatGPT"
-        ${conversationId 
-          ? `click button "${conversationId}" of group 1 of group 1 of window 1`
-          : ""
-        }
-        delay 0.4
-        -- clear the input area
+        ${conversationId ? `click button "${conversationId}" of group 1 of group 1 of window 1` : ""}
+        delay 0.2
         keystroke "a" using {command down}
         keystroke (ASCII character 8)
-        -- paste our prompt
         keystroke "v" using {command down}
-        delay 0.4
-        -- send it
         keystroke return
-
-        -- wait until ChatGPT finishes generating (Stop generating button goes away)
-        repeat while exists button "Stop generating" of window 1
-          delay 0.5
-        end repeat
-        delay 0.2
-
-        -- select all response text and copy
-        keystroke "a" using {command down}
-        keystroke "c" using {command down}
       end tell
     end tell
   `);
 
-  // 4. Give macOS a moment to update the clipboard
-  await new Promise(r => setTimeout(r, 100));
+  /* ---------- NEW busy-loop ---------- */
+  async function waitUntilDone() {
+    while (true) {
+      const stillBusy = await runAppleScript(`
+        tell application "System Events" to tell process "ChatGPT"
+          return (exists button "Stop generating" of window 1) ¬
+              or (exists button "Continue generating" of window 1)
+        end tell`);
+      if (stillBusy.trim() === "false") break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  await waitUntilDone();
+  /* ----------------------------------- */
 
-  // 5. Grab the freshly-copied response
+  /* ---------- OPTIONAL: make sure the
+     response has stopped growing too --- */
+  let lastLen = 0, sameCount = 0;
+  do {
+    await runAppleScript(`
+      tell application "System Events" to tell process "ChatGPT"
+        keystroke "a" using {command down}
+        keystroke "c" using {command down}
+      end tell`);
+    await new Promise(r => setTimeout(r, 100));
+    const txt = getClipboard();
+    const len = txt.length;
+    if (len === lastLen) sameCount += 1; else { sameCount = 0; lastLen = len; }
+  } while (sameCount < 3);   // 3× 100 ms with no growth
+  /* ----------------------------------- */
+
   const response = getClipboard();
-
-  // 6. Restore the user’s original clipboard contents
   setClipboard(originalClipboard);
-
   return response;
 }
+
 
 async function getConversations(): Promise<string[]> {
   await ensureChatGPTRunning();
