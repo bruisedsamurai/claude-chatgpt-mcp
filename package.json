@@ -20,13 +20,9 @@
     "mac"
   ],
   "scripts": {
-    // Local hacking: run TS directly with hot reload
     "dev":     "bun run index.ts", 
-    // Bundle into a single JS file for production
     "build":   "bun build index.ts --outdir dist --compile",   
-    // Ensure dist is up-to-date whenever you install or clone from Git
-    "prepare": "bun build index.ts --outdir dist --compile",   
-    // Launch the bundled file with Bun (still TS‐aware)
+    "prepare": "bun build index.ts --outdir dist --compile",
     "start":   "bun run dist/index.js"   
   },
   "dependencies": {
