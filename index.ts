@@ -1,5 +1,3 @@
-Here’s the complete contents of index.ts with all fixes applied—paste it directly into the file to replace whatever is there:
-
 #!/usr/bin/env node
 /**
  * ChatGPT MCP server – bruisedsamurai fork, updated to register the tool and stay alive.
