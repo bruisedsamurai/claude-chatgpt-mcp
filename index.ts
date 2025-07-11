@@ -126,39 +126,57 @@ async function ensureChatGPTRunning(): Promise<void> {
   }
 }
 
-async function askChatGPT(prompt: string, conversationId?: string): Promise<string> {
+async function askChatGPT(prompt: string, conversationId: string?) {
   await ensureChatGPTRunning();
 
+  // 1. Save your existing clipboard so we can restore it later
   const originalClipboard = getClipboard();
+  // 2. Put our prompt on the clipboard so we can “paste” it into the ChatGPT window
   setClipboard(prompt);
 
-  const script = `
-    tell application "ChatGPT"
-      activate
-      delay 1
-      tell application "System Events"
-        tell process "ChatGPT"
-          ${
-            conversationId
-              ? `click button "${conversationId}" of group 1 of group 1 of window 1`
-              : ""
-          }
-          delay 0.4
-          keystroke "a" using {command down}
-          keystroke (ASCII character 8)
-          keystroke "v" using {command down}
-          delay 0.4
-          keystroke return
-        end tell
+  // 3. Send keystrokes to paste the prompt, send it, wait for generation, then copy the response
+  await runAppleScript(`
+    tell application "ChatGPT" to activate
+    delay 1
+    tell application "System Events"
+      tell process "ChatGPT"
+        ${conversationId 
+          ? `click button "${conversationId}" of group 1 of group 1 of window 1`
+          : ""
+        }
+        delay 0.4
+        -- clear the input area
+        keystroke "a" using {command down}
+        keystroke (ASCII character 8)
+        -- paste our prompt
+        keystroke "v" using {command down}
+        delay 0.4
+        -- send it
+        keystroke return
+
+        -- wait until ChatGPT finishes generating (Stop generating button goes away)
+        repeat while exists button "Stop generating" of window 1
+          delay 0.5
+        end repeat
+        delay 0.2
+
+        -- select all response text and copy
+        keystroke "a" using {command down}
+        keystroke "c" using {command down}
       end tell
-    end tell`;
-  await runAppleScript(script);
+    end tell
+  `);
 
-  // crude wait; replace with UI polling in production
-  await new Promise((r) => setTimeout(r, 3000));
+  // 4. Give macOS a moment to update the clipboard
+  await new Promise(r => setTimeout(r, 100));
 
+  // 5. Grab the freshly-copied response
+  const response = getClipboard();
+
+  // 6. Restore the user’s original clipboard contents
   setClipboard(originalClipboard);
-  return "Response captured (scraping logic omitted)";
+
+  return response;
 }
 
 async function getConversations(): Promise<string[]> {
